@@ -1,8 +1,8 @@
 # Vercel 배포와 복구
 
-Vercel의 [restory 프로젝트](https://vercel.com/aegins/restory)에 GitHub 저장소를 연결했습니다. Supabase 초기 스키마와 공개용 환경변수 설정도 적용했습니다. 실제 이메일 인증과 로그인 후 계정 저장은 별도 검증이 필요합니다.
+Vercel의 [restory 프로젝트](https://vercel.com/aegins/restory)에 GitHub 저장소를 연결했습니다. Supabase 초기 스키마와 공개용 환경변수 설정도 적용했습니다. 소유자가 직접 가입과 이메일 인증을 마쳤고 실제 계정의 비공개 저장과 수정을 확인했습니다.
 
-2026년 10월 1일 사용자 승인 후 최초 구현 `1b59f72`를 [공개 주소](https://restory-vert-six.vercel.app)에 배포했습니다. [배포 상세](https://vercel.com/aegins/restory/8GanCneFUXs4H8AGUi7hrAW7LtBu)에서 Ready 상태와 소스 커밋을 확인할 수 있습니다. 실제 주소의 HTTP 200 응답, 보안 헤더, 데스크톱과 모바일 화면, 공개 감상 목록 연결, 가입 폼을 확인했습니다. 실제 이메일 수신과 인증 후 저장을 검증한 결과는 아닙니다.
+2026년 10월 1일 사용자 승인 후 최초 구현 `1b59f72`를 [공개 주소](https://restory-vert-six.vercel.app)에 배포했습니다. [배포 상세](https://vercel.com/aegins/restory/8GanCneFUXs4H8AGUi7hrAW7LtBu)에서 Ready 상태와 소스 커밋을 확인할 수 있습니다. 실제 주소의 HTTP 200 응답, 보안 헤더, 데스크톱과 모바일 화면, 공개 감상 목록 연결, 가입 폼을 확인했습니다. 이어 소유자 계정으로 비공개 기록 저장, 연도 날짜 보존, 새로고침 후 조회와 수정을 확인했습니다. 다른 기기, 실제 두 계정 사이의 접근 권한, 공개와 공개 취소의 HTTP 흐름, 비밀번호 재설정은 추가 검증 대상입니다.
 
 현재 Vercel 운영 브랜치는 GitHub 기본 브랜치인 `feat/restory-mvp`입니다. 이 브랜치의 push는 운영 배포로 이어집니다. 후속 변경은 새 기능 브랜치와 PR로 진행합니다.
 

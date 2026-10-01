@@ -1,6 +1,8 @@
 # Supabase 연결과 데이터 관리
 
-현재 Supabase 프로젝트는 아직 만들지 않았습니다. 환경변수가 비어 있으면 restory는 체험 모드로 동작합니다. 이메일 가입, 인증 메일, 실제 계정별 저장과 배포 환경의 동작은 프로젝트를 연결한 뒤 확인해야 합니다.
+2026년 10월 1일 `restory` Supabase 프로젝트를 만들고 초기 마이그레이션을 SQL Editor에서 적용했습니다. 로컬 `.env.local`도 연결했습니다. 환경변수가 비어 있는 다른 컴퓨터에서는 체험 모드로 동작합니다.
+
+실제 프로젝트의 공개 감상 API 응답과 비로그인 요청의 개인 기록, 프로필 조회 차단을 확인했습니다. 이메일 수신, 가입과 인증 후 계정별 저장은 별도로 확인해야 합니다. 아래 처음 연결하기 절차는 새 환경을 만들 때 사용하며, 현재 프로젝트에 초기 마이그레이션을 다시 실행하지 않습니다.
 
 데이터베이스 마이그레이션은 별도의 로컬 PostgreSQL 17에서 실행했습니다. 두 사용자와 비로그인 권한으로 개인 기록 접근 차단, 공개와 공개 취소, 운영자 권한, 계정 삭제를 검증했습니다. 이 검증은 Supabase의 실제 이메일 인증이나 HTTP API 연결 검증을 대신하지 않습니다.
 
@@ -18,7 +20,7 @@
    ```
 
 5. Supabase의 Authentication 설정에서 이메일 로그인을 활성화합니다. 이메일 확인을 사용하는 경우 인증 메일을 실제로 받을 수 있는 주소로 시험합니다.
-6. Authentication의 URL Configuration에서 Site URL을 서비스 주소로 설정하고, Redirect URLs에 로컬 개발 주소와 사용할 콜백 주소를 등록합니다. 로컬 기본값은 `http://localhost:3000/auth/callback`입니다. 브라우저에서 `127.0.0.1`을 사용하는 경우 `http://127.0.0.1:3000/auth/callback`도 별도로 등록합니다. 배포 뒤에는 `https://배포도메인/auth/callback`을 추가합니다.
+6. Authentication의 URL Configuration에서 Site URL을 서비스 주소로 설정하고, Redirect URLs에 사용할 콜백 주소를 등록합니다. 로컬 기본값은 `http://127.0.0.1:34761/auth/callback`이며 비밀번호 재설정용 `http://127.0.0.1:34761/auth/callback?recovery=1`도 등록합니다. 배포 뒤에는 `https://배포도메인/auth/callback`과 `https://배포도메인/auth/callback?recovery=1`을 추가합니다. 실제 사용하는 주소만 허용합니다.
 7. 개발 서버를 다시 시작하고 가입, 이메일 확인, 로그인, 기록 저장, 새로고침, 로그아웃을 확인합니다.
 
 관리자용 secret key, `service_role` 키, 데이터베이스 비밀번호는 이 서비스의 브라우저 코드에 필요하지 않습니다. `.env.local`도 Git에 올리지 않습니다. 배포할 때는 호스팅 서비스의 환경변수 설정에 같은 공개용 변수 이름을 등록하고 다시 빌드합니다.
@@ -26,6 +28,10 @@
 `NEXT_PUBLIC_DEMO_MODE=true`이면 다른 변수가 있어도 체험 모드를 강제하며 원격 데이터베이스에 연결하지 않습니다. 테스트와 화면 확인에 사용할 수 있습니다.
 
 공식 참고: [API 키 종류](https://supabase.com/docs/guides/api/api-keys), [RLS와 데이터 권한](https://supabase.com/docs/guides/database/postgres/row-level-security), [인증 리디렉션 주소](https://supabase.com/docs/guides/auth/redirect-urls).
+
+## 가입 메일 준비
+
+현재 프로젝트에는 별도 SMTP 서비스를 연결하지 않았습니다. Supabase 기본 발송은 프로젝트 조직에 속한 이메일로 제한되므로, 다른 사람도 가입하도록 공개하기 전에는 발신 도메인과 SMTP를 설정해야 합니다. 메일 제한을 피하려고 이메일 확인을 끄지 않습니다. 발신 도메인 소유 확인과 메일 서비스 가입은 프로젝트 소유자가 준비하며, 비밀키나 SMTP 비밀번호를 저장소에 올리지 않습니다. [Supabase SMTP 안내](https://supabase.com/docs/guides/auth/auth-smtp)
 
 ## 기록과 공개 범위
 

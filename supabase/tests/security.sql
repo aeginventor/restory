@@ -69,6 +69,11 @@ set local "request.jwt.claim.sub" = '';
 select pg_temp.check_true((select count(*) = 1 from public.works), 'Anon sees only explicit public work copy');
 select pg_temp.check_true((select count(*) = 0 from public.works where id='20000000-0000-4000-8000-000000000001'), 'Anon cannot read original work by ID');
 select pg_temp.check_true(jsonb_array_length(public.list_public_entries()) = 1, 'Anon can read published feed');
+select pg_temp.check_true(jsonb_array_length(public.list_public_entries(null,0,'같은 제목')) = 1, 'Public search matches work title');
+select pg_temp.check_true(jsonb_array_length(public.list_public_entries(null,0,'  a 개인  ')) = 1, 'Public search trims input and matches summary case-insensitively');
+select pg_temp.check_true(jsonb_array_length(public.list_public_entries(null,0,'B 개인 감상')) = 0, 'Public search never surfaces private entries');
+select pg_temp.check_true(jsonb_array_length(public.list_public_entries(null,0,'%')) = 0, 'Search wildcards are treated literally');
+select pg_temp.check_true(jsonb_array_length(public.list_public_entries(null,0,'a@example')) = 0, 'Public search does not match account email');
 select pg_temp.check_true(not (public.get_public_entry('30000000-0000-4000-8000-000000000001') ? 'user_id'), 'Public entry excludes auth user ID');
 select pg_temp.check_true(public.get_public_entry('30000000-0000-4000-8000-000000000001') ->> 'favorite' = 'false', 'Public entry does not expose private bookmark preference');
 select pg_temp.check_true(position('@example.test' in public.list_public_entries()::text) = 0, 'Public result excludes account email');
@@ -119,6 +124,8 @@ select public.set_entry_visibility(id,'public') from public.entries where summar
 select pg_temp.check_true(jsonb_array_length(public.list_public_entries(null,0)) = 20, 'Public feed page size is 20');
 select pg_temp.check_true(jsonb_array_length(public.list_public_entries(null,1)) = 2, 'Public feed second page contains remaining entries');
 select pg_temp.check_true(jsonb_array_length(public.list_public_entries(null,2)) = 0, 'Public feed reaches a finite empty page');
+select pg_temp.check_true(jsonb_array_length(public.list_public_entries(null,0,'페이지 테스트 21')) = 1, 'Public search finds entries beyond the first page');
+select pg_temp.check_true(jsonb_array_length(public.list_public_entries(null,1,'페이지 테스트')) = 1, 'Public search keeps server-side pagination');
 select pg_temp.check_true((select count(*) = 22 from public.entries), 'Repeat experiences do not overwrite older records');
 delete from public.entries where summary like '페이지 테스트 %';
 

@@ -12,8 +12,19 @@ export interface StorageLike {
   getItem(key: string): string | null;
   setItem(key: string, value: string): void;
 }
-const damagedMessage =
-  "이 브라우저의 체험 기록을 읽을 수 없습니다. 기존 데이터는 덮어쓰지 않았습니다. 브라우저 개발자 도구의 로컬 저장소에서 restory.demo.v1 값을 복사해 보관한 뒤 체험 데이터를 초기화해 주세요.";
+export const DEMO_DAMAGED_MESSAGE =
+  "이 브라우저의 체험 기록을 읽을 수 없습니다. 기존 데이터는 덮어쓰지 않았습니다. 아래에서 원본을 내려받아 보관한 뒤 체험 데이터를 초기화해 주세요.";
+const damagedMessage = DEMO_DAMAGED_MESSAGE;
+
+// Guarantees a strictly increasing updatedAt so conflict checks work within the same millisecond.
+function nextUpdatedAt(previous?: string): string {
+  return new Date(
+    Math.max(Date.now(), previous ? Date.parse(previous) + 1 : 0),
+  ).toISOString();
+}
+
+const conflictMessage =
+  "기록이 다른 곳에서 변경되었거나 삭제되었습니다. 입력한 내용을 복사해 보관한 뒤 최신 기록을 다시 열어 주세요.";
 
 function browserStorage(): StorageLike {
   if (typeof window === "undefined")
@@ -77,6 +88,14 @@ function readArchive(storage: StorageLike): Archive {
   }
 }
 
+export function readRawDemoArchive(storage?: StorageLike): string | null {
+  try {
+    return (storage ?? browserStorage()).getItem(DEMO_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
 export function resetDemoArchive(storage?: StorageLike): void {
   writeArchive(storage ?? browserStorage(), createSeedArchive());
 }
@@ -104,7 +123,7 @@ export function createDemoRepository(
       writeArchive(target, { ...archive, works: [...archive.works, work] });
       return work;
     },
-    async saveEntry(input, id) {
+    async saveEntry(input, id, expectedUpdatedAt) {
       const validated = validateEntryInput(input);
       const target = storage();
       const archive = readArchive(target);
@@ -115,11 +134,13 @@ export function createDemoRepository(
       const existing = id
         ? archive.entries.find((entry) => entry.id === id)
         : undefined;
+      if (id && expectedUpdatedAt && existing?.updatedAt !== expectedUpdatedAt)
+        throw new Error(conflictMessage);
       if (id && !existing)
         throw new Error(
           "수정할 감상 기록을 찾을 수 없습니다. 목록을 새로고침해 주세요.",
         );
-      const now = new Date().toISOString();
+      const now = nextUpdatedAt(existing?.updatedAt);
       const entry: Entry = {
         ...validated,
         id: existing?.id ?? crypto.randomUUID(),
@@ -132,6 +153,24 @@ export function createDemoRepository(
         ? archive.entries.map((item) => (item.id === id ? entry : item))
         : [...archive.entries, entry];
       writeArchive(target, { ...archive, entries });
+      return entry;
+    },
+    async setFavorite(id, favorite) {
+      if (typeof favorite !== "boolean")
+        throw new Error("책갈피 설정을 확인해 주세요.");
+      const target = storage();
+      const archive = readArchive(target);
+      const existing = archive.entries.find((entry) => entry.id === id);
+      if (!existing) throw new Error("감상 기록을 찾을 수 없습니다.");
+      const entry = {
+        ...existing,
+        favorite,
+        updatedAt: nextUpdatedAt(existing.updatedAt),
+      };
+      writeArchive(target, {
+        ...archive,
+        entries: archive.entries.map((item) => (item.id === id ? entry : item)),
+      });
       return entry;
     },
     async deleteEntry(id) {
@@ -155,11 +194,26 @@ export function createDemoRepository(
       if (!entry) throw new Error("감상 기록을 찾을 수 없습니다.");
       return entry;
     },
-    async listPublic(workId, page = 0) {
+    async listPublic(workId, page = 0, query = "") {
       if (!Number.isInteger(page) || page < 0)
         throw new Error("페이지 번호가 올바르지 않습니다.");
+      const normalized = query.trim().slice(0, 200).toLocaleLowerCase();
       return createPublicSamples()
         .filter((entry) => !workId || entry.workId === workId)
+        .filter(
+          (entry) =>
+            !normalized ||
+            [
+              entry.work.title,
+              entry.work.creator,
+              entry.summary,
+              entry.body,
+              ...entry.tags,
+            ]
+              .join(" ")
+              .toLocaleLowerCase()
+              .includes(normalized),
+        )
         .slice(page * 20, (page + 1) * 20);
     },
     async reportEntry() {

@@ -23,6 +23,8 @@ import {
   RotateCcw,
   Shield,
   ExternalLink,
+  Upload,
+  ArrowLeft,
 } from "lucide-react";
 import type {
   Archive,
@@ -33,12 +35,25 @@ import type {
   Work,
 } from "@/lib/types";
 import { MEDIA_LABELS, MEDIA_TYPES } from "@/lib/types";
-import { createDemoRepository } from "@/lib/demo-repository";
+import {
+  createDemoRepository,
+  DEMO_DAMAGED_MESSAGE,
+  readRawDemoArchive,
+  resetDemoArchive,
+} from "@/lib/demo-repository";
+import { clearDraft, clearUserDrafts, draftKey } from "@/lib/drafts";
+import {
+  applyImport,
+  planImport,
+  type ImportPlan,
+  type ImportResult,
+} from "@/lib/import";
 import {
   dateYear,
   exportArchive,
   filterEntries,
   formatExperiencedDate,
+  parseArchiveImport,
   sortEntries,
 } from "@/lib/domain";
 import { getSupabaseBrowserClient, isSupabaseConfigured } from "@/lib/supabase";
@@ -155,6 +170,8 @@ function RestorySession({
   const [publicPage, setPublicPage] = useState(0);
   const [hasMore, setHasMore] = useState(false);
   const [publicBusy, setPublicBusy] = useState(false);
+  const [publicSearch, setPublicSearch] = useState("");
+  const [publicWork, setPublicWork] = useState<string | null>(null);
   const [publish, setPublish] = useState<Entry | null>(null);
   const [report, setReport] = useState<PublicEntry | null>(null);
   const [admin, setAdmin] = useState(false);
@@ -187,8 +204,15 @@ function RestorySession({
         if (active) {
           setArchive(value);
           setError("");
-          if (initialWorkId)
-            setDetail(value.works.find((w) => w.id === initialWorkId) || null);
+          if (initialWorkId) {
+            const own = value.works.find((w) => w.id === initialWorkId);
+            setDetail(own || null);
+            // An unknown ID may be a public catalogue work, for example from a shared link.
+            if (!own) {
+              setPublicWork(initialWorkId);
+              setView("explore");
+            }
+          }
         }
       })
       .catch((e) => {
@@ -228,9 +252,11 @@ function RestorySession({
       setPublicBusy(true);
       setPublicError("");
       try {
+        // Search runs on the server (or the full sample list) so results are not limited
+        // to the entries already loaded in this page.
         const items = configured
-          ? await listPublicEntries(undefined, page)
-          : await repo.listPublic(undefined, page);
+          ? await listPublicEntries(undefined, page, publicSearch)
+          : await repo.listPublic(undefined, page, publicSearch);
         setPublicEntries((prev) => (page === 0 ? items : [...prev, ...items]));
         setPublicPage(page);
         setHasMore(items.length === 20);
@@ -240,11 +266,25 @@ function RestorySession({
         setPublicBusy(false);
       }
     },
-    [configured, repo],
+    [configured, repo, publicSearch],
   );
   useEffect(() => {
-    if (view === "explore") queueMicrotask(() => void loadPublic());
-  }, [view, loadPublic]);
+    const timer = setTimeout(() => setPublicSearch(publicQuery.trim()), 300);
+    return () => clearTimeout(timer);
+  }, [publicQuery]);
+  useEffect(() => {
+    if (view === "explore" && !publicWork)
+      queueMicrotask(() => void loadPublic());
+  }, [view, publicWork, loadPublic]);
+  function openPublicWork(id: string) {
+    setPublicWork(id);
+    setView("explore");
+    history.pushState(null, "", `/works/${id}`);
+  }
+  function closePublicWork() {
+    setPublicWork(null);
+    history.pushState(null, "", "/");
+  }
   const entries = archive?.entries || [];
   const works = archive?.works || [];
   const visible = filterEntries(entries, works, {
@@ -275,12 +315,14 @@ function RestorySession({
     setDirty(false);
     setCompose(value);
   };
+  const composeDraftKey = draftKey(userId, compose?.entry?.id);
   const closeCompose = () => {
     if (
       dirty &&
       !confirm("작성 중인 내용을 닫을까요? 저장하지 않은 내용은 사라져요.")
     )
       return;
+    if (dirty) clearDraft(composeDraftKey);
     setCompose(null);
     setDirty(false);
   };
@@ -310,7 +352,8 @@ function RestorySession({
   }
   async function favoriteEntry(entry: Entry) {
     try {
-      await repo.saveEntry({ ...entry, favorite: !entry.favorite }, entry.id);
+      // Only the bookmark changes. Text edited in another tab is never overwritten here.
+      await repo.setFavorite(entry.id, !entry.favorite);
       await reload();
     } catch (e) {
       setToast(message(e));
@@ -351,6 +394,36 @@ function RestorySession({
       setToast(message(e));
     }
   }
+  function downloadRawDemo() {
+    const raw = readRawDemoArchive();
+    if (raw === null) {
+      setToast("내려받을 체험 원본이 없어요.");
+      return;
+    }
+    const blob = new Blob([raw], { type: "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `restory-demo-original-${new Date().toISOString().slice(0, 10)}.txt`;
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setToast("읽을 수 없는 원본을 파일로 저장했어요.");
+  }
+  async function resetDemo() {
+    if (
+      !confirm(
+        "이 브라우저의 체험 기록을 예시 상태로 되돌릴까요? 원본을 아직 내려받지 않았다면 먼저 내려받아 주세요.",
+      )
+    )
+      return;
+    try {
+      resetDemoArchive();
+      await reload();
+      setToast("체험 기록을 초기화했어요.");
+    } catch (e) {
+      setError(message(e));
+    }
+  }
   async function signOut() {
     const client = getSupabaseBrowserClient();
     if (!client) return;
@@ -359,6 +432,7 @@ function RestorySession({
       setToast("로그아웃하지 못했어요. 다시 시도해 주세요.");
       return;
     }
+    clearUserDrafts(userId);
     setArchive(null);
     setSettings(false);
     setToast("로그아웃했어요. 체험 화면으로 돌아갑니다.");
@@ -549,6 +623,17 @@ function RestorySession({
             >
               다시 시도
             </button>
+            {repo.mode === "demo" && error === DEMO_DAMAGED_MESSAGE && (
+              <div className="recovery-actions">
+                <button className="button secondary" onClick={downloadRawDemo}>
+                  <Download size={16} />
+                  원본 내려받기
+                </button>
+                <button className="button danger-button" onClick={resetDemo}>
+                  체험 데이터 초기화
+                </button>
+              </div>
+            )}
             {userId && (
               <button className="text-button" onClick={signOut}>
                 로그아웃하고 체험으로 돌아가기
@@ -704,6 +789,21 @@ function RestorySession({
           </>
         ) : archive && view === "reflect" ? (
           <Reflection archive={archive} onOpen={setDetail} />
+        ) : view === "explore" && publicWork ? (
+          <section className="public-section">
+            <PublicWorkSection
+              workId={publicWork}
+              demo={!configured}
+              onBack={closePublicWork}
+              onReport={(entry) => {
+                if (!userId) {
+                  setAuth(true);
+                  return;
+                }
+                setReport(entry);
+              }}
+            />
+          </section>
         ) : view === "explore" ? (
           <section className="public-section">
             {!configured && (
@@ -716,7 +816,7 @@ function RestorySession({
               <Search size={18} />
               <input
                 aria-label="공개 감상 검색"
-                placeholder="불러온 감상에서 작품 찾기"
+                placeholder="작품, 창작자, 감상 내용으로 찾기"
                 value={publicQuery}
                 onChange={(e) => setPublicQuery(e.target.value)}
               />
@@ -727,41 +827,43 @@ function RestorySession({
               </p>
             )}
             <div className="public-list">
-              {publicEntries
-                .filter(
-                  (e) =>
-                    !publicQuery ||
-                    `${e.work.title} ${e.summary} ${e.work.creator}`
-                      .toLocaleLowerCase()
-                      .includes(publicQuery.toLocaleLowerCase()),
-                )
-                .map((entry) => (
-                  <PublicCard
-                    key={entry.id}
-                    entry={entry}
-                    demo={!configured}
-                    onReport={() => {
-                      if (!userId) {
-                        setAuth(true);
-                        return;
-                      }
-                      setReport(entry);
-                    }}
-                  />
-                ))}
+              {publicEntries.map((entry) => (
+                <PublicCard
+                  key={entry.id}
+                  entry={entry}
+                  demo={!configured}
+                  onOpenWork={() => openPublicWork(entry.work.id)}
+                  onReport={() => {
+                    if (!userId) {
+                      setAuth(true);
+                      return;
+                    }
+                    setReport(entry);
+                  }}
+                />
+              ))}
             </div>
             {publicBusy && (
               <p role="status" className="muted">
                 감상을 불러오고 있어요.
               </p>
             )}
-            {!publicBusy && !publicEntries.length && !publicError && (
-              <div className="empty-state">
-                <MessageSquare size={32} />
-                <h2>첫 번째 감상을 기다리고 있어요.</h2>
-                <p>내 기록에서 공유하고 싶은 감상을 골라 공개할 수 있어요.</p>
-              </div>
-            )}
+            {!publicBusy &&
+              !publicEntries.length &&
+              !publicError &&
+              (publicSearch ? (
+                <div className="empty-state" role="status">
+                  <Search size={32} />
+                  <h2>‘{publicSearch}’에 맞는 공개 감상이 없어요.</h2>
+                  <p>작품 제목, 창작자, 감상 내용과 태그에서 찾았어요.</p>
+                </div>
+              ) : (
+                <div className="empty-state">
+                  <MessageSquare size={32} />
+                  <h2>첫 번째 감상을 기다리고 있어요.</h2>
+                  <p>내 기록에서 공유하고 싶은 감상을 골라 공개할 수 있어요.</p>
+                </div>
+              ))}
             {hasMore && (
               <button
                 className="button secondary load-more"
@@ -825,6 +927,7 @@ function RestorySession({
             repository={repo}
             entry={compose.entry}
             initialWork={compose.work}
+            draftKey={composeDraftKey}
             onSaved={saved}
             onDirty={() => setDirty(true)}
           />
@@ -856,6 +959,12 @@ function RestorySession({
             onUpdated={async () => {
               await reload();
               setToast("변경 내용을 저장했어요.");
+            }}
+            onImported={async (result) => {
+              await reload();
+              setToast(
+                `감상 ${result.entries}개를 비공개로 가져왔어요. 같은 내용 ${result.skipped}개는 건너뛰었어요.`,
+              );
             }}
             onDelete={async () => {
               await repo.deleteAccount();
@@ -1364,15 +1473,126 @@ function WorkDetail({
     </div>
   );
 }
+function PublicWorkSection({
+  workId,
+  demo,
+  onBack,
+  onReport,
+}: {
+  workId: string;
+  demo: boolean;
+  onBack: () => void;
+  onReport: (entry: PublicEntry) => void;
+}) {
+  const [items, setItems] = useState<PublicEntry[]>([]);
+  const [page, setPage] = useState(0);
+  const [more, setMore] = useState(false);
+  const [busy, setBusy] = useState(true);
+  const [error, setError] = useState("");
+  const load = useCallback(
+    async (next: number) => {
+      setBusy(true);
+      setError("");
+      try {
+        const data = demo
+          ? await createDemoRepository().listPublic(workId, next)
+          : await listPublicEntries(workId, next);
+        setItems((prev) => (next === 0 ? data : [...prev, ...data]));
+        setPage(next);
+        setMore(data.length === 20);
+      } catch (e) {
+        setError(message(e));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [workId, demo],
+  );
+  useEffect(() => {
+    queueMicrotask(() => void load(0));
+  }, [load]);
+  const work = items[0]?.work;
+  return (
+    <div className="public-work">
+      <button type="button" className="text-button" onClick={onBack}>
+        <ArrowLeft size={14} />
+        모든 공개 감상
+      </button>
+      <header className="work-detail-title">
+        {work ? (
+          <>
+            <WorkMark type={work.mediaType} large />
+            <div>
+              <span className="eyebrow">{MEDIA_LABELS[work.mediaType]}</span>
+              <h2>{work.title}</h2>
+              <p>
+                {[work.creator, work.releaseYear].filter(Boolean).join(" / ") ||
+                  "작품 정보 미입력"}
+              </p>
+            </div>
+          </>
+        ) : (
+          <div>
+            <h2>작품의 공개 감상</h2>
+          </div>
+        )}
+      </header>
+      {demo && (
+        <p className="sample-caption">
+          아래 감상은 체험을 위해 작성한 예시입니다. 실제 이용자 게시물이
+          아니에요.
+        </p>
+      )}
+      {error && (
+        <p className="form-error" role="alert">
+          {error}
+        </p>
+      )}
+      <div className="public-list">
+        {items.map((entry) => (
+          <PublicCard
+            key={entry.id}
+            entry={entry}
+            demo={demo}
+            onReport={() => onReport(entry)}
+          />
+        ))}
+      </div>
+      {busy && (
+        <p role="status" className="muted">
+          감상을 불러오고 있어요.
+        </p>
+      )}
+      {!busy && !items.length && !error && (
+        <div className="empty-state" role="status">
+          <MessageSquare size={32} />
+          <h2>이 작품의 공개 감상이 아직 없어요.</h2>
+          <p>감상이 비공개로 바뀌었거나 주소가 바뀌었을 수 있어요.</p>
+        </div>
+      )}
+      {more && (
+        <button
+          className="button secondary load-more"
+          disabled={busy}
+          onClick={() => load(page + 1)}
+        >
+          감상 더 보기
+        </button>
+      )}
+    </div>
+  );
+}
 export function PublicCard({
   entry,
   demo,
   onReport,
+  onOpenWork,
   compact = false,
 }: {
   entry: PublicEntry;
   demo: boolean;
   onReport?: () => void;
+  onOpenWork?: () => void;
   compact?: boolean;
 }) {
   const [revealed, setRevealed] = useState(false);
@@ -1385,7 +1605,28 @@ export function PublicCard({
             {MEDIA_LABELS[entry.work.mediaType]}
             {entry.work.releaseYear ? ` / ${entry.work.releaseYear}` : ""}
           </span>
-          <h2>{entry.work.title}</h2>
+          <h2>
+            {onOpenWork ? (
+              <button
+                type="button"
+                className="work-link"
+                onClick={onOpenWork}
+                title="이 작품의 공개 감상 모아 보기"
+              >
+                {entry.work.title}
+              </button>
+            ) : demo ? (
+              entry.work.title
+            ) : (
+              <Link
+                className="work-link"
+                href={`/works/${entry.work.id}`}
+                title="이 작품의 공개 감상 모아 보기"
+              >
+                {entry.work.title}
+              </Link>
+            )}
+          </h2>
         </div>
         {demo ? (
           <span className="sample-badge">예시</span>
@@ -1445,6 +1686,7 @@ function SettingsPanel({
   repo,
   onExport,
   onUpdated,
+  onImported,
   onDelete,
   onSignOut,
 }: {
@@ -1452,6 +1694,7 @@ function SettingsPanel({
   repo: RestoryRepository;
   onExport: () => void;
   onUpdated: () => Promise<void>;
+  onImported: (result: ImportResult) => Promise<void>;
   onDelete: () => Promise<void>;
   onSignOut: () => Promise<void>;
 }) {
@@ -1459,6 +1702,44 @@ function SettingsPanel({
   const [confirmation, setConfirmation] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
+  const [importing, setImporting] = useState<{
+    name: string;
+    archive: Archive;
+    plan: ImportPlan;
+  } | null>(null);
+  async function pickImport(file: File | undefined) {
+    setError("");
+    setImporting(null);
+    if (!file) return;
+    try {
+      if (file.size > 20 * 1024 * 1024)
+        throw new Error("20MB 이하의 기록 파일만 가져올 수 있습니다.");
+      const imported = parseArchiveImport(await file.text());
+      setImporting({
+        name: file.name,
+        archive: imported,
+        plan: planImport(archive, imported),
+      });
+    } catch (e) {
+      setError(message(e));
+    }
+  }
+  async function runImport() {
+    if (!importing) return;
+    setBusy(true);
+    setError("");
+    try {
+      const result = await applyImport(repo, archive, importing.archive);
+      setImporting(null);
+      await onImported(result);
+    } catch (e) {
+      setError(
+        `${message(e)} 이미 추가된 감상은 남아 있으며 같은 파일을 다시 가져오면 중복 없이 이어서 처리합니다.`,
+      );
+    } finally {
+      setBusy(false);
+    }
+  }
   async function update() {
     setBusy(true);
     setError("");
@@ -1504,6 +1785,54 @@ function SettingsPanel({
           <Download size={16} />
           기록 내보내기
         </button>
+      </section>
+      <section>
+        <h3>기록 가져오기</h3>
+        <p>
+          restory에서 내보낸 JSON 파일의 감상을 비공개로 추가합니다. 작품은
+          제목, 매체, 창작자, 연도가 같으면 기존 작품에 연결하고, 같은 내용의
+          감상은 건너뜁니다.
+        </p>
+        <label className="file-picker">
+          <Upload size={16} />
+          <span>{importing ? importing.name : "가져올 기록 파일 선택"}</span>
+          <input
+            type="file"
+            accept="application/json,.json"
+            aria-label="가져올 기록 파일"
+            disabled={busy}
+            onChange={(e) => {
+              void pickImport(e.target.files?.[0]);
+              e.target.value = "";
+            }}
+          />
+        </label>
+        {importing && (
+          <div className="import-preview" role="status">
+            <p>
+              새 작품 {importing.plan.newWorks.length}개와 감상{" "}
+              {importing.plan.entries.length}개를 추가하고, 같은 내용{" "}
+              {importing.plan.duplicateEntries}개는 건너뜁니다. 가져온 감상은
+              모두 비공개입니다.
+            </p>
+            <div className="inline-actions">
+              <button
+                className="button primary"
+                onClick={runImport}
+                disabled={busy || !importing.plan.entries.length}
+              >
+                {busy ? "가져오는 중…" : "가져오기"}
+              </button>
+              <button
+                className="text-button"
+                onClick={() => setImporting(null)}
+                disabled={busy}
+              >
+                취소
+              </button>
+            </div>
+          </div>
+        )}
       </section>
       {repo.mode === "demo" && (
         <section className="notice">

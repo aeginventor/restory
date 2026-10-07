@@ -161,24 +161,47 @@ export function createCloudRepository(userId: string): RestoryRepository {
       fail(error);
       return workFromRow(data as WorkRow);
     },
-    async saveEntry(input, id) {
+    async saveEntry(input, id, expectedUpdatedAt) {
       input = validateEntryInput(input);
       const db = client();
-      const result = id
-        ? await db
-            .from("entries")
-            .update(entryPayload(input))
-            .eq("id", id)
-            .eq("user_id", userId)
-            .select()
-            .single()
-        : await db
-            .from("entries")
-            .insert({ ...entryPayload(input), user_id: userId })
-            .select()
-            .single();
+      if (id) {
+        let query = db
+          .from("entries")
+          .update(entryPayload(input))
+          .eq("id", id)
+          .eq("user_id", userId);
+        if (expectedUpdatedAt)
+          query = query.eq("updated_at", expectedUpdatedAt);
+        const { data, error } = await query.select().maybeSingle();
+        fail(error);
+        if (!data)
+          throw new Error(
+            expectedUpdatedAt
+              ? "기록이 다른 곳에서 변경되었거나 삭제되었습니다. 입력한 내용을 복사해 보관한 뒤 최신 기록을 다시 열어 주세요."
+              : "기록을 찾을 수 없거나 접근할 수 없습니다.",
+          );
+        return entryFromRow(data as EntryRow);
+      }
+      const result = await db
+        .from("entries")
+        .insert({ ...entryPayload(input), user_id: userId })
+        .select()
+        .single();
       fail(result.error);
       return entryFromRow(result.data as EntryRow);
+    },
+    async setFavorite(id, favorite) {
+      if (typeof favorite !== "boolean")
+        throw new Error("책갈피 설정을 확인해 주세요.");
+      const { data, error } = await client()
+        .from("entries")
+        .update({ favorite })
+        .eq("id", id)
+        .eq("user_id", userId)
+        .select()
+        .single();
+      fail(error);
+      return entryFromRow(data as EntryRow);
     },
     async deleteEntry(id) {
       const { data, error } = await client()
@@ -200,8 +223,8 @@ export function createCloudRepository(userId: string): RestoryRepository {
       fail(error);
       return entryFromRow(data as EntryRow);
     },
-    async listPublic(workId, page = 0) {
-      return listPublicEntries(workId, page);
+    async listPublic(workId, page = 0, query = "") {
+      return listPublicEntries(workId, page, query);
     },
     async reportEntry(id, reason) {
       const { error } = await client().rpc("report_entry", {
@@ -234,10 +257,12 @@ export function createCloudRepository(userId: string): RestoryRepository {
 export async function listPublicEntries(
   workId?: string,
   page = 0,
+  query = "",
 ): Promise<PublicEntry[]> {
   const { data, error } = await client().rpc("list_public_entries", {
     p_work_id: workId ?? null,
     p_page: Math.max(0, Math.trunc(page)),
+    p_query: query.trim().slice(0, 200),
   });
   fail(error);
   return ((data ?? []) as PublicRow[]).map((row) => ({

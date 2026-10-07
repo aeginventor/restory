@@ -159,3 +159,79 @@ describe("브라우저 체험 기록", () => {
     expect((await repository.load()).entries).toHaveLength(7);
   });
 });
+
+describe("동시 수정 보호", () => {
+  const storage = () => {
+    const values = new Map<string, string>();
+    return {
+      getItem: (key: string) => values.get(key) ?? null,
+      setItem: (key: string, value: string) => void values.set(key, value),
+    } satisfies StorageLike;
+  };
+
+  it("책갈피는 다른 내용을 건드리지 않고 갱신 시각만 올린다", async () => {
+    const repository = createDemoRepository(storage());
+    const entry = (await repository.load()).entries[0];
+    const stale = { ...entry };
+    const edited = await repository.saveEntry(
+      { ...entry, body: "다른 탭에서 고친 본문" },
+      entry.id,
+    );
+    const marked = await repository.setFavorite(stale.id, !stale.favorite);
+    expect(marked.body).toBe("다른 탭에서 고친 본문");
+    expect(marked.favorite).toBe(!stale.favorite);
+    expect(marked.updatedAt > edited.updatedAt).toBe(true);
+    await expect(
+      repository.setFavorite("00000000-0000-4000-8000-00000000dead", true),
+    ).rejects.toThrow("찾을 수 없습니다");
+  });
+
+  it("예전 상태로 저장하면 충돌을 알리고 최신 기록을 보존한다", async () => {
+    const repository = createDemoRepository(storage());
+    const entry = (await repository.load()).entries[0];
+    const latest = await repository.saveEntry(
+      { ...entry, summary: "최신 감상" },
+      entry.id,
+    );
+    await expect(
+      repository.saveEntry(
+        { ...entry, summary: "예전 화면에서 쓴 감상" },
+        entry.id,
+        entry.updatedAt,
+      ),
+    ).rejects.toThrow("다른 곳에서 변경");
+    const current = (await repository.load()).entries.find(
+      (e) => e.id === entry.id,
+    );
+    expect(current?.summary).toBe("최신 감상");
+    const saved = await repository.saveEntry(
+      { ...latest, summary: "최신 상태에서 이어 쓴 감상" },
+      entry.id,
+      latest.updatedAt,
+    );
+    expect(saved.summary).toBe("최신 상태에서 이어 쓴 감상");
+  });
+
+  it("공개 감상 검색은 제목, 창작자, 본문, 태그를 대상으로 하고 작성자 이름은 제외한다", async () => {
+    const repository = createDemoRepository(storage());
+    const all = await repository.listPublic();
+    expect(all.length).toBeGreaterThan(1);
+    const first = all[0];
+    const byTitle = await repository.listPublic(undefined, 0, first.work.title);
+    expect(byTitle.every((e) => e.work.title === first.work.title)).toBe(true);
+    expect(byTitle.length).toBeGreaterThan(0);
+    expect(await repository.listPublic(undefined, 0, first.authorName)).toEqual(
+      [],
+    );
+    expect(
+      await repository.listPublic(undefined, 0, "없는 검색어 zzz"),
+    ).toEqual([]);
+    expect(
+      await repository.listPublic(
+        undefined,
+        0,
+        `  ${first.work.title.toUpperCase()} `,
+      ),
+    ).toHaveLength(byTitle.length);
+  });
+});

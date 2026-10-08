@@ -77,14 +77,23 @@ export interface RestoryRepository {
   mode: "demo" | "cloud";
   load(): Promise<Archive>;
   saveWork(input: WorkInput): Promise<Work>;
-  saveEntry(input: EntryInput, id?: string): Promise<Entry>;
+  saveEntry(
+    input: EntryInput,
+    id?: string,
+    expectedUpdatedAt?: string,
+  ): Promise<Entry>;
+  setFavorite(id: string, favorite: boolean): Promise<Entry>;
   deleteEntry(id: string): Promise<void>;
   setVisibility(
     id: string,
     visibility: Visibility,
     catalogWorkId?: string,
   ): Promise<Entry>;
-  listPublic(workId?: string, page?: number): Promise<PublicEntry[]>;
+  listPublic(
+    workId?: string,
+    page?: number,
+    query?: string,
+  ): Promise<PublicEntry[]>;
   reportEntry(id: string, reason: string): Promise<void>;
   updateNickname(nickname: string): Promise<Profile>;
   deleteAccount(): Promise<void>;

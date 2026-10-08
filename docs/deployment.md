@@ -1,6 +1,10 @@
 # Vercel 배포와 복구
 
-현재 저장소는 로컬에서 실행하고 빌드할 수 있도록 구성되어 있습니다. Vercel 프로젝트 연결, Supabase 프로젝트 생성과 운영 인증 설정은 별도 작업입니다. 이 문서는 아직 배포하지 않은 주소를 실제 서비스 주소로 가정하지 않습니다.
+Vercel의 [restory 프로젝트](https://vercel.com/aegins/restory)에 GitHub 저장소를 연결했습니다. Supabase 초기 스키마와 공개용 환경변수 설정도 적용했습니다. 소유자가 직접 가입과 이메일 인증을 마쳤고 실제 계정의 비공개 저장과 수정을 확인했습니다.
+
+2026년 10월 1일 사용자 승인 후 최초 구현 `1b59f72`를 [공개 주소](https://restory-vert-six.vercel.app)에 배포했습니다. [배포 상세](https://vercel.com/aegins/restory/8GanCneFUXs4H8AGUi7hrAW7LtBu)에서 Ready 상태와 소스 커밋을 확인할 수 있습니다. 실제 주소의 HTTP 200 응답, 보안 헤더, 데스크톱과 모바일 화면, 공개 감상 목록 연결, 가입 폼을 확인했습니다. 이어 소유자 계정으로 비공개 기록 저장, 연도 날짜 보존, 새로고침 후 조회와 수정을 확인했습니다. 다른 기기, 실제 두 계정 사이의 접근 권한, 공개와 공개 취소의 HTTP 흐름, 비밀번호 재설정은 추가 검증 대상입니다.
+
+현재 Vercel 운영 브랜치는 GitHub 기본 브랜치인 `feat/restory-mvp`입니다. 이 브랜치의 push는 운영 배포로 이어집니다. 후속 변경은 새 기능 브랜치와 PR로 진행합니다.
 
 ## 배포 전 준비
 
@@ -18,9 +22,13 @@ Vercel에서 저장소를 가져오면 Next.js 프로젝트로 설정합니다. 
 | 로컬 개발과 Preview | 개발용 Supabase 프로젝트      | 로그인, 권한과 공유 기능 검사        |
 | Production          | 운영용 Supabase 프로젝트      | 실제 사용자 기록                     |
 
+위 표는 환경을 나눌 때의 기준입니다. 현재 첫 구축에는 Supabase 프로젝트 하나를 연결했고 Vercel의 Production과 Preview 환경변수가 같은 프로젝트를 가리킵니다. 실제 사용자 기록을 받기 전에는 개발용 Supabase를 별도로 만들고 Preview 환경변수를 분리해야 합니다. 그전에는 공유 데이터베이스에서 삭제나 초기화 테스트를 실행하지 않습니다.
+
 `.env.example`과 Supabase 안내에 명시된 변수만 해당 Vercel 환경에 입력합니다. 개발용과 운영용 프로젝트의 주소와 키를 혼동하지 않습니다. 브라우저용 공개 키와 관리자 비밀키는 서로 바꿔 넣을 수 없습니다. 환경변수 변경을 반영하려면 해당 환경을 다시 배포해야 합니다. [Vercel 환경변수 안내](https://vercel.com/docs/environment-variables)
 
 Supabase Authentication의 Site URL과 허용 리디렉션 주소를 실제 배포 주소에 맞춥니다. 프로젝트에서 사용하는 인증 콜백 경로는 [Supabase 설정 안내](supabase.md)를 따릅니다. 로그인 메일이 로컬 주소나 다른 프로젝트로 돌아가지 않는지 확인합니다.
+
+현재 설정한 Site URL은 `https://restory-vert-six.vercel.app`입니다. 허용된 인증 주소는 이 도메인과 `http://127.0.0.1:34761`의 `/auth/callback`, `/auth/callback?recovery=1` 네 개입니다. 임의의 Vercel 도메인을 모두 허용하는 와일드카드는 등록하지 않았습니다. 새 미리보기에서 인증을 시험할 때는 해당 배포의 정확한 콜백 주소를 추가합니다.
 
 ## 미리보기 확인
 

@@ -147,6 +147,27 @@ export function validateArchive(input: unknown): Archive {
   return archive;
 }
 
+export function parseArchiveImport(text: string): Archive {
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(text);
+  } catch {
+    throw new Error(
+      "JSON 파일을 읽을 수 없습니다. restory에서 내보낸 파일인지 확인해 주세요.",
+    );
+  }
+  if (
+    !parsed ||
+    typeof parsed !== "object" ||
+    (parsed as { schema?: unknown }).schema !== "restory.archive" ||
+    (parsed as { version?: unknown }).version !== 1
+  )
+    throw new Error(
+      "restory에서 내보낸 기록 파일만 가져올 수 있습니다. 파일의 schema와 version을 확인해 주세요.",
+    );
+  return validateArchive(parsed);
+}
+
 export function formatExperiencedDate(
   value: string | null,
   precision: DatePrecision,

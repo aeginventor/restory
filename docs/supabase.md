@@ -31,9 +31,21 @@
 
 공식 참고: [API 키 종류](https://supabase.com/docs/guides/api/api-keys), [RLS와 데이터 권한](https://supabase.com/docs/guides/database/postgres/row-level-security), [인증 리디렉션 주소](https://supabase.com/docs/guides/auth/redirect-urls).
 
-## 가입 메일 준비
+## 가입 방식: Google 로그인
 
-현재 프로젝트에는 별도 SMTP 서비스를 연결하지 않았습니다. Supabase 기본 발송은 프로젝트 조직에 속한 이메일로 제한되므로, 다른 사람도 가입하도록 공개하기 전에는 발신 도메인과 SMTP를 설정해야 합니다. 메일 제한을 피하려고 이메일 확인을 끄지 않습니다. 발신 도메인 소유 확인과 메일 서비스 가입은 프로젝트 소유자가 준비하며, 비밀키나 SMTP 비밀번호를 저장소에 올리지 않습니다. [Supabase SMTP 안내](https://supabase.com/docs/guides/auth/auth-smtp)
+일반 이용자의 가입은 Google 로그인으로 받습니다. 이메일 확인 메일을 보내지 않으므로 별도 SMTP 서비스가 필요 없습니다. 이메일과 비밀번호 로그인은 소유자 계정처럼 이미 만든 계정을 위해 그대로 남겨 둡니다.
+
+코드는 `NEXT_PUBLIC_GOOGLE_LOGIN=true`일 때만 로그인 화면에 Google로 계속하기 버튼을 보여줍니다. 아래 설정을 마치기 전에는 값을 바꾸지 않습니다.
+
+1. [Google Cloud Console](https://console.cloud.google.com/)에서 restory용 프로젝트를 만들거나 기존 프로젝트를 고릅니다. OAuth 동의 화면의 앱 이름이 로그인 창에 표시되므로 `hobby-map` 프로젝트를 같이 쓰면 "취미 지도"라는 이름이 보입니다. 이름이 다르게 보여도 괜찮다면 같은 프로젝트를 써도 됩니다.
+2. OAuth 동의 화면에서 범위는 이메일과 프로필 기본 범위만 사용합니다. 이 범위는 Testing 상태에서도 테스트 사용자 등록 없이 누구나 로그인할 수 있고 7일 승인 만료의 예외입니다.
+3. 사용자 인증 정보에서 웹 애플리케이션 OAuth 클라이언트를 만들고, 승인된 리디렉션 URI에 Supabase가 Authentication → Sign In / Providers → Google 화면에 표시하는 callback 주소를 넣습니다. 형태는 `https://riajlcrqopmyxiymgzrk.supabase.co/auth/v1/callback`입니다.
+4. 발급된 Client ID와 Client Secret을 Supabase의 Google 제공자 설정에 직접 입력하고 제공자를 켭니다. 두 값은 저장소, 환경변수, 대화에 넣지 않습니다.
+5. Supabase URL Configuration의 Redirect URLs에 `https://restory-vert-six.vercel.app/auth/callback`과 로컬 주소 `http://127.0.0.1:34761/auth/callback`이 있는지 확인합니다.
+6. Vercel 환경변수와 로컬 `.env.local`에 `NEXT_PUBLIC_GOOGLE_LOGIN=true`를 넣고 다시 배포합니다.
+7. 시크릿 창에서 Google로 가입해 닉네임 기본값 "기록하는 사람"이 보이는지, 설정에서 닉네임을 바꿀 수 있는지, 로그아웃과 재로그인 뒤 기록이 유지되는지 확인합니다.
+
+Google 로그인으로 만든 계정은 가입 시 닉네임을 받지 않으므로 기본 닉네임으로 시작합니다. 공개 감상을 쓰기 전에 설정에서 바꾸도록 안내합니다. 공식 참고: [Supabase Google 로그인](https://supabase.com/docs/guides/auth/social-login/auth-google)
 
 ## 기록과 공개 범위
 

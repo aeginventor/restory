@@ -18,7 +18,32 @@ export function AuthForm({
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState("");
   const [notice, setNotice] = useState("");
+  const [googleBusy, setGoogleBusy] = useState(false);
   const client = getSupabaseBrowserClient();
+  // Shown only after the Supabase Google provider is configured for this deployment.
+  const googleEnabled = process.env.NEXT_PUBLIC_GOOGLE_LOGIN === "true";
+  async function continueWithGoogle() {
+    if (!client) return;
+    setGoogleBusy(true);
+    setError("");
+    setNotice("");
+    try {
+      // Supabase redirects to Google and back to /auth/callback, which finishes the session.
+      const { error } = await client.auth.signInWithOAuth({
+        provider: "google",
+        options: { redirectTo: `${location.origin}/auth/callback` },
+      });
+      if (error) throw error;
+    } catch (e) {
+      const raw = e instanceof Error ? e.message : "";
+      setError(
+        raw.toLowerCase().includes("provider")
+          ? "Google 로그인이 아직 설정되지 않았어요. 이메일로 계속하거나 운영자에게 알려주세요."
+          : "Google 로그인을 시작하지 못했어요. 잠시 뒤 다시 시도해 주세요.",
+      );
+      setGoogleBusy(false);
+    }
+  }
   if (!client)
     return (
       <div className="auth-form">
@@ -92,6 +117,26 @@ export function AuthForm({
   }
   return (
     <form className="auth-form" onSubmit={submit}>
+      {googleEnabled && (mode === "login" || mode === "signup") && (
+        <>
+          <button
+            type="button"
+            className="button secondary full-width google-button"
+            onClick={continueWithGoogle}
+            disabled={busy || googleBusy}
+          >
+            <GoogleMark />
+            {googleBusy ? "Google로 이동 중…" : "Google로 계속하기"}
+          </button>
+          <p className="field-hint">
+            처음이면 Google 계정으로 바로 가입돼요. 공개 감상에 표시되는
+            닉네임은 설정에서 바꿀 수 있어요.
+          </p>
+          <div className="auth-divider" role="separator">
+            <span>또는 이메일로</span>
+          </div>
+        </>
+      )}
       <p className="auth-intro">
         {mode === "signup"
           ? "나의 기록을 여러 기기에서 이어보세요."
@@ -211,5 +256,28 @@ export function AuthForm({
       </div>
       <p className="field-hint">체험 기록은 계정으로 자동 이동하지 않아요.</p>
     </form>
+  );
+}
+
+function GoogleMark() {
+  return (
+    <svg width="16" height="16" viewBox="0 0 48 48" aria-hidden="true">
+      <path
+        fill="#EA4335"
+        d="M24 9.5c3.5 0 6.6 1.2 9 3.5l6.7-6.7C35.7 2.5 30.2 0 24 0 14.6 0 6.5 5.4 2.6 13.2l7.8 6.1C12.3 13.6 17.7 9.5 24 9.5z"
+      />
+      <path
+        fill="#4285F4"
+        d="M46.5 24.5c0-1.6-.1-2.8-.4-4H24v7.6h12.9c-.3 2.2-1.7 5.4-4.9 7.6l7.5 5.8c4.5-4.1 7-10.2 7-17z"
+      />
+      <path
+        fill="#FBBC05"
+        d="M10.4 28.7A14.5 14.5 0 0 1 9.5 24c0-1.6.3-3.2.8-4.7l-7.8-6.1A24 24 0 0 0 0 24c0 3.9.9 7.5 2.6 10.8l7.8-6.1z"
+      />
+      <path
+        fill="#34A853"
+        d="M24 48c6.5 0 11.9-2.1 15.9-5.8l-7.5-5.8c-2 1.4-4.8 2.4-8.4 2.4-6.3 0-11.7-4.1-13.6-9.9l-7.8 6.1C6.5 42.6 14.6 48 24 48z"
+      />
+    </svg>
   );
 }
